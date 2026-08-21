@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=WhiteWall
+Comment=Prepara foto e cartelle per Instagram
+Exec=whitewall
+Icon=image-x-generic
+Terminal=false
+Categories=Graphics;Photography;
+StartupNotify=true
