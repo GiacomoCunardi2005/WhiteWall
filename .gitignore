@@ -1,6 +1,10 @@
 # Python and test caches
 __pycache__/
 *.py[cod]
+test_*.py
+*_test.py
+tests/
+conftest.py
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
@@ -20,6 +24,10 @@ env/
 .codex/
 .agents/
 graphify-out/
+.graphify/
+.graphify-cache/
+.graphify_cache/
+.graphify_*
 
 # Secrets and machine-local configuration
 .env
