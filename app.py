@@ -24,7 +24,7 @@ FORMATS = {
     "reel": (9, 16, "mp4"),
 }
 FAITHFUL_BACKGROUND = (0xF2, 0xF2, 0xF2)
-MIN_EDGE_CONTRAST = 10  # minimum ΔL* between photo edge and adaptive frame
+MIN_EDGE_CONTRAST = 15  # minimum ΔL* between photo edge and adaptive frame
 EXTENSIONS = {
     ".3fr", ".arw", ".cr2", ".cr3", ".crw", ".dcr", ".dng", ".erf",
     ".fff", ".iiq", ".k25", ".kdc", ".mef", ".mos", ".mrw", ".nef",

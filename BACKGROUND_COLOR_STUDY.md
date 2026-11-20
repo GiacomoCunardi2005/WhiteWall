@@ -296,8 +296,8 @@ For WhiteWall, the embedded frame must also remain visibly separate from the pix
 ```text
 edge_L* = median L* of the outer 8% band
 background_L* = 90 - 0.10 × edge_L*        # range 80–90
-if |background_L* - edge_L*| < 10:          # crossover near edge_L* ≈ 82
-    background_L* = edge_L* ± 10            # lighter below crossover, darker above
+if |background_L* - edge_L*| < 15:          # crossover near edge_L* ≈ 82
+    background_L* = edge_L* ± 15            # lighter below crossover, darker above
 
 image_hue = direction of the global mean (a*, b*)
 background_chroma = min(0.35 × image_chroma, 10)
