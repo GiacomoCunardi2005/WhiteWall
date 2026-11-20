@@ -24,6 +24,7 @@ FORMATS = {
     "reel": (9, 16, "mp4"),
 }
 FAITHFUL_BACKGROUND = (0xF2, 0xF2, 0xF2)
+MIN_EDGE_CONTRAST = 10  # minimum ΔL* between photo edge and adaptive frame
 EXTENSIONS = {
     ".3fr", ".arw", ".cr2", ".cr3", ".crw", ".dcr", ".dng", ".erf",
     ".fff", ".iiq", ".k25", ".kdc", ".mef", ".mos", ".mrw", ".nef",
@@ -75,11 +76,9 @@ def photo_lab(source: Path) -> tuple[float, float, float]:
         or index % 128 < band or index % 128 >= 128 - band
     ]
     average_a, average_b = sum(a) / count - 128, sum(b) / count - 128
-    return (
-        median(perimeter) * 100 / 255,
-        0 if abs(average_a) < 1.5 else average_a,
-        0 if abs(average_b) < 1.5 else average_b,
-    )
+    if hypot(average_a, average_b) < 1.5:
+        average_a = average_b = 0
+    return median(perimeter) * 100 / 255, average_a, average_b
 
 
 def lab_to_srgb(lightness: float, a: float, b: float) -> tuple[int, int, int]:
@@ -106,9 +105,18 @@ def lab_to_srgb(lightness: float, a: float, b: float) -> tuple[int, int, int]:
 
 def adaptive_lab(photo: tuple[float, float, float]) -> tuple[float, float, float]:
     edge_lightness, a, b = photo
+    edge_lightness = max(0, min(100, edge_lightness))
     chroma = hypot(a, b)
     tint = min(0.35, 10 / chroma) if chroma else 0
-    return 90 - max(0, min(100, edge_lightness)) / 10, a * tint, b * tint
+    lightness = 90 - edge_lightness / 10
+    # The inverse mapping crosses the edge at L*≈82: push the frame away so it stays visible.
+    # Lighter frame below the crossover, darker above it (jump at the crossover is intentional).
+    if abs(lightness - edge_lightness) < MIN_EDGE_CONTRAST:
+        lightness = (
+            edge_lightness + MIN_EDGE_CONTRAST if lightness > edge_lightness
+            else edge_lightness - MIN_EDGE_CONTRAST
+        )
+    return lightness, a * tint, b * tint
 
 
 def adaptive_color(photo: tuple[float, float, float]) -> tuple[int, int, int]:
