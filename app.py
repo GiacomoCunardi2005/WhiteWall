@@ -3,11 +3,13 @@
 
 from __future__ import annotations
 
+import os
 import re
 import shutil
 import subprocess
 import tempfile
 import threading
+from concurrent.futures import ThreadPoolExecutor
 from math import ceil, hypot
 from pathlib import Path
 from statistics import median
@@ -25,6 +27,11 @@ FORMATS = {
 }
 FAITHFUL_BACKGROUND = (0xF2, 0xF2, 0xF2)
 MIN_EDGE_CONTRAST = 15  # minimum ΔL* between photo edge and adaptive frame
+# One magick process per core; the work is in ImageMagick, so threads are enough (no GIL contention).
+# shortcut: no memory cap; ~14 large RAWs at once need several GB, add a lower limit if RAM runs out.
+WORKERS = os.cpu_count() or 1
+# Parallelism comes from running many processes; ImageMagick's own threads would only oversubscribe the CPU.
+os.environ.setdefault("MAGICK_THREAD_LIMIT", "1")
 EXTENSIONS = {
     ".3fr", ".arw", ".cr2", ".cr3", ".crw", ".dcr", ".dng", ".erf",
     ".fff", ".iiq", ".k25", ".kdc", ".mef", ".mos", ".mrw", ".nef",
@@ -59,7 +66,8 @@ def run(
 
 def photo_lab(source: Path) -> tuple[float, float, float]:
     result = run([
-        "magick", f"{source}[0]", "-auto-orient", "-resize", "128x128!",
+        # jpeg:size lets libjpeg decode at reduced scale; other formats ignore it.
+        "magick", "-define", "jpeg:size=256x256", f"{source}[0]", "-auto-orient", "-resize", "128x128!",
         "-background", "white", "-alpha", "remove", "-colorspace", "Lab",
         "-separate", "-depth", "8", "gray:-",
     ], text=False)
@@ -128,18 +136,24 @@ def select_background(sources: list[Path], mode: str) -> tuple[int, int, int]:
         return FAITHFUL_BACKGROUND
     if mode != "adaptive":
         raise RenderError("Modalità sfondo non valida")
-    targets = [adaptive_lab(photo_lab(source)) for source in sources]
+    with ThreadPoolExecutor(WORKERS) as pool:
+        targets = [adaptive_lab(photo) for photo in pool.map(photo_lab, sources)]
     return lab_to_srgb(*(median(channel) for channel in zip(*targets)))
 
 
 def image_size(source: Path) -> tuple[int, int]:
+    # -ping reads only the header; -auto-orient does not apply to it, so swap sides by hand.
     result = run([
-        "magick", f"{source}[0]", "-auto-orient", "-format", "%w %h", "info:"
+        "magick", "identify", "-ping", "-format", "%w %h %[orientation]", f"{source}[0]"
     ])
     try:
-        return tuple(map(int, result.stdout.split()))
+        width, height, orientation = result.stdout.split()
+        width, height = int(width), int(height)
     except ValueError as error:
         raise RenderError("Impossibile leggere le dimensioni della foto") from error
+    if orientation in {"LeftTop", "RightTop", "RightBottom", "LeftBottom"}:
+        return height, width
+    return width, height
 
 
 def render(
@@ -186,12 +200,12 @@ def render(
     return color
 
 
-def available_path(path: Path) -> Path:
-    if not path.exists():
+def available_path(path: Path, taken: set[Path] = frozenset()) -> Path:
+    if not path.exists() and path not in taken:
         return path
     for number in range(2, 10_000):
         candidate = path.with_stem(f"{path.stem}-{number}")
-        if not candidate.exists():
+        if not candidate.exists() and candidate not in taken:
             return candidate
     raise RenderError("Troppi file con lo stesso nome nella cartella di uscita")
 
@@ -206,15 +220,20 @@ def render_many(
     shared_color = select_background(sources, mode)
     output_dir.mkdir(parents=True, exist_ok=True)
     extension = FORMATS[preset][2]
-    outputs = []
-    for index, source in enumerate(sources):
+    # Names are reserved up front: parallel renders would otherwise pick the same free name.
+    outputs: list[Path] = []
+    for source in sources:
         stem = re.sub(r"[^\w.-]+", "-", source.stem).strip("-._") or "foto"
-        destination = available_path(output_dir / f"{stem}-whitewall.{extension}")
+        outputs.append(available_path(output_dir / f"{stem}-whitewall.{extension}", set(outputs)))
+
+    def render_one(index: int) -> None:
         render(
-            source, preset, destination, shared_color,
+            sources[index], preset, outputs[index], shared_color,
             preview if index == 0 else None, border=border,
         )
-        outputs.append(destination)
+
+    with ThreadPoolExecutor(WORKERS) as pool:
+        list(pool.map(render_one, range(len(sources))))
     return shared_color, outputs
 
 
