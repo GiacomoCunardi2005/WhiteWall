@@ -189,8 +189,11 @@ def render(
     if preset == "reel":
         run([
             "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
-            "-loop", "1", "-i", str(framed), "-t", "5", "-r", "30",
-            "-vf", "scale=1080:1920:flags=lanczos:in_range=pc:out_range=tv,format=yuv420p",
+            # Decode and scale the master once, then repeat that frame: `-loop 1` would
+            # re-decode the full-size JPEG for each of the 150 frames.
+            "-i", str(framed), "-r", "30",
+            "-vf", "scale=1080:1920:flags=lanczos:in_range=pc:out_range=tv,format=yuv420p,"
+                   "loop=loop=149:size=1:start=0,setpts=N/30/TB",
             "-c:v", "libx264", "-pix_fmt", "yuv420p", "-color_range", "tv",
             "-crf", "15", "-tune", "stillimage", "-movflags", "+faststart",
             str(destination),
